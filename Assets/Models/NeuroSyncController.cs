@@ -50,6 +50,7 @@ public class NeurosuncController : MonoBehaviour
 
     private void InitializeOnDeviceModels()
     {
+        if (_featureWorker != null) return;
         featureExtractorModelPath = Path.Combine(Application.streamingAssetsPath, "audio_feature_extractor_fp16.sentis");
         neurosyncModelPath = Path.Combine(Application.streamingAssetsPath, "neurosync_fp16.sentis");
         
@@ -93,7 +94,25 @@ public class NeurosuncController : MonoBehaviour
         }
 
         Debug.Log($"Starting on-device blendshape generation for audio: '{audioClip.name}'.");
-        
+        var generated = Generate(audioClip);
+        if (generated != null)
+        {
+            _generatedBlendshapes = generated;
+            _generatedAudioClip = audioClip;
+            _isDataReady = true;
+            Debug.Log($"On-device blendshape data generation complete! Press Spacebar to play.");
+        }
+    }
+
+    /// <summary>
+    /// Runs the on-device models on <paramref name="audioClip"/> and returns one row of ARKit blendshape weights per
+    /// 60 fps frame (for <see cref="BlendshapeManager.PlayBlendshapes"/>), or null when there is nothing to animate.
+    /// </summary>
+    public List<float[]> Generate(AudioClip audioClip)
+    {
+        if (audioClip == null) return null;
+        InitializeOnDeviceModels();
+
         float[] rawAudio = AudioUtils.GetNormalizedAudioData(audioClip);
         float[] resampledAudio = AudioUtils.Resample(rawAudio, audioClip.frequency, targetSampleRate);
         
@@ -127,13 +146,7 @@ public class NeurosuncController : MonoBehaviour
         float[,] generatedData = _featureProcessor.ProcessFeatures(
             featureData, numFrames, numFeatures, runDecoderInference);
         
-        if (generatedData != null)
-        {
-            _generatedBlendshapes = ConvertToList(generatedData);
-            _generatedAudioClip = audioClip;
-            _isDataReady = true;
-            Debug.Log($"On-device blendshape data generation complete! Press Spacebar to play.");
-        }
+        return generatedData != null ? ConvertToList(generatedData) : null;
     }
     
     private List<float[]> ConvertToList(float[,] array2D)

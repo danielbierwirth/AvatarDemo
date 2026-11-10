@@ -43,6 +43,22 @@ public class BlendshapeManager : MonoBehaviour
         Play();
     }
     
+    /// <summary>
+    /// Plays blendshape frames on the face without touching audio, for audio that another component plays (TTS).
+    /// Call it in the frame the audio starts.
+    /// </summary>
+    public void PlayBlendshapes(List<float[]> blendshapes)
+    {
+        if (blendshapes == null || blendshapes.Count == 0) return;
+        blendshapeFrames = ConvertToBlendshapeFrames(blendshapes);
+        playbackTime = 0f;
+        isPlaying = true;
+    }
+
+    public bool IsPlaying => isPlaying;
+
+    public SkinnedMeshRenderer SkinnedMesh => m_SkinnedMesh;
+
     void Update()
     {
         if (!isPlaying || blendshapeFrames.Count == 0)

@@ -97,3 +97,33 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# IDE / solution files
+.vscode/
+.idea/
+*.slnx
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# VoiceAgent (Ask Nova voice dialog)
+# Whisper for Arabic speech-to-text (~194 MB): VoiceAgent > Speech > Download Whisper Base writes it
+/[Aa]ssets/StreamingAssets/Whisper/
+/[Aa]ssets/StreamingAssets/Whisper.meta
+# Model copies staged into StreamingAssets during a player build (ModelBuildStaging)
+/[Aa]ssets/StreamingAssets/Models/
+/[Aa]ssets/StreamingAssets/Models.meta
+/[Aa]ssets/StreamingAssets/voiceagent_files.txt*
+
+# NeuroSync Sentis models (472 MB / 13 MB) - too large for git and LFS can't be
+# used on this public fork. Get them from StreamingAssets.zip (see README).
+/[Aa]ssets/StreamingAssets/*.sentis
+/[Aa]ssets/StreamingAssets/*.sentis.meta
+/[Aa]ssets/StreamingAssets/*.onnx
+/[Aa]ssets/StreamingAssets/*.onnx.meta

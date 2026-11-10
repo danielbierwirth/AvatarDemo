@@ -1,0 +1,44 @@
+# Unity YAML assets: merge with UnityYAMLMerge if configured, keep LF
+*.unity      text eol=lf merge=unityyamlmerge
+*.prefab     text eol=lf merge=unityyamlmerge
+*.asset      text eol=lf merge=unityyamlmerge
+*.mat        text eol=lf merge=unityyamlmerge
+*.anim       text eol=lf merge=unityyamlmerge
+*.controller text eol=lf merge=unityyamlmerge
+*.meta       text eol=lf merge=unityyamlmerge
+*.cs         text diff=csharp
+
+# Binary assets. Git LFS is intentionally NOT used: this repo is a public
+# GitHub fork, and GitHub rejects new LFS uploads to public forks.
+# Large ML models (*.sentis / *.onnx) are git-ignored; see README.
+*.sentis binary
+*.onnx   binary
+*.fbx    binary
+*.obj    binary
+*.blend  binary
+*.glb    binary
+*.mp3    binary
+*.wav    binary
+*.ogg    binary
+*.aif    binary
+*.aiff   binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.psd    binary
+*.tga    binary
+*.tif    binary
+*.tiff   binary
+*.exr    binary
+*.hdr    binary
+*.mp4    binary
+*.mov    binary
+*.webm   binary
+*.ttf    binary
+*.otf    binary
+*.dll    binary
+*.so     binary
+*.a      binary
+*.dylib  binary
+*.bundle binary
+*.zip    binary
