@@ -120,3 +120,10 @@ Thumbs.db
 /[Aa]ssets/StreamingAssets/Models/
 /[Aa]ssets/StreamingAssets/Models.meta
 /[Aa]ssets/StreamingAssets/voiceagent_files.txt*
+
+# NeuroSync Sentis models (472 MB / 13 MB) - too large for git and LFS can't be
+# used on this public fork. Get them from StreamingAssets.zip (see README).
+/[Aa]ssets/StreamingAssets/*.sentis
+/[Aa]ssets/StreamingAssets/*.sentis.meta
+/[Aa]ssets/StreamingAssets/*.onnx
+/[Aa]ssets/StreamingAssets/*.onnx.meta
