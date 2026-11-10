@@ -34,8 +34,8 @@ public sealed class AvatarLipSync : MonoBehaviour
         var head = m_Blendshapes != null ? m_Blendshapes.SkinnedMesh : null;
         for (var i = 0; i < s_Jaw.Length; i++)
         {
-            m_HeadJaw[i] = head != null ? head.sharedMesh.GetBlendShapeIndex(s_Jaw[i]) : -1;
-            m_TeethJaw[i] = m_Teeth != null ? m_Teeth.sharedMesh.GetBlendShapeIndex("teeth_" + s_Jaw[i]) : -1;
+            m_HeadJaw[i] = head != null ? m_Blendshapes.GetBlendshapeIndex(s_Jaw[i]) : -1;
+            m_TeethJaw[i] = m_Teeth != null ? BlendshapeNames.FindIndex(m_Teeth.sharedMesh, "teeth_" + s_Jaw[i]) : -1;
         }
     }
 

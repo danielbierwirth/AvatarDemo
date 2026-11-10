@@ -20,6 +20,16 @@ public class BlendshapeManager : MonoBehaviour
     private AudioSource audioSource;
     private float playbackTime = 0f;
 
+    // NeuroSync output order. Names use this project's style; BlendshapeNames also matches the ARKit standard names.
+    private static readonly string[] blendshapeNames = new string[]
+    {
+        "eyeBlinking_Left", "eyeBlinking_Right", "eyeLookDown_L", "eyeLookDown_R", "eyeLookIn_L", "eyeLookIn_R", "eyeLookOut_L", "eyeLookOut_R", "eyeLookUp_L", "eyeLookUp_R", "eyeSquint_L", "eyeSquint_R", "eyeWide_Left", "eyeWide_Right", "jawForward", "jawLeft", "jawRight", "jawOpen", "mouthClosed", "mouthFunnel", "mouthPucker", "mouthLeft", "mouthRight", "mouthSmile_L", "mouthSmile_R", "mouthFrown_L", "mouthFrown_R", "mouthDimple_L", "mouthDimple_R", "mouthStretch_L", "mouthStretch_R", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthPress_L", "mouthPress_R", "mouthLowerDown_L", "mouthLowerDown_R", "mouthUpperUp_L", "mouthUpperUp_R", "browDown_Left", "browDown_Right", "browInnerUp", "browOuterUp_L", "browOuterUp_R", "cheekPuff", "cheekSquint_L", "cheekSquint_R", "noseSneer_L", "noseSneer_R", "tongue_jawOpen", "tongue_jawForward", "tongue_jawLeft", "tongue_jawRight", "tongue_tongueOut",
+    };
+
+    // Blendshape name → index on the current head mesh, rebuilt when the mesh changes.
+    private readonly Dictionary<string, int> indexCache = new Dictionary<string, int>();
+    private Mesh indexCacheMesh;
+
     void Awake()
     {
         Application.targetFrameRate = TARGET_FRAMERATE;
@@ -79,6 +89,36 @@ public class BlendshapeManager : MonoBehaviour
         ApplyBlendshapes(blendshapeFrames[targetFrame]);
     }
 
+    /// <summary>
+    /// Index of a blendshape on the head mesh, accepting both this project's names ("mouthSmile_L") and ARKit standard
+    /// names ("mouthSmileLeft"). Returns -1 if the head doesn't have it.
+    /// </summary>
+    public int GetBlendshapeIndex(string blendshapeName)
+    {
+        var mesh = m_SkinnedMesh != null ? m_SkinnedMesh.sharedMesh : null;
+        if (mesh == null) return -1;
+
+        if (mesh != indexCacheMesh)
+        {
+            indexCache.Clear();
+            indexCacheMesh = mesh;
+            var missing = new List<string>();
+            for (int i = 0; i < ARKIT_BLENDSHAPE_COUNT; i++)
+            {
+                string name = blendshapeNames[i];
+                int index = BlendshapeNames.FindIndex(mesh, name);
+                indexCache[name] = index;
+                if (index == -1) missing.Add(name);
+            }
+            if (missing.Count > 0)
+                Debug.LogWarning($"[Blendshapes] '{mesh.name}' has no match for {missing.Count} of {ARKIT_BLENDSHAPE_COUNT} ARKit blendshapes: {string.Join(", ", missing)}", this);
+        }
+
+        if (!indexCache.TryGetValue(blendshapeName, out int cached))
+            indexCache[blendshapeName] = cached = BlendshapeNames.FindIndex(mesh, blendshapeName);
+        return cached;
+    }
+
     private void ApplyBlendshapes(BlendshapeFrame frame)
     {
         if (m_SkinnedMesh == null) return;
@@ -88,17 +128,18 @@ public class BlendshapeManager : MonoBehaviour
             string blendshapeName = kvp.Key;
             float value = kvp.Value;
 
-            int blendshapeIndex = m_SkinnedMesh.sharedMesh.GetBlendShapeIndex(blendshapeName);
+            int blendshapeIndex = GetBlendshapeIndex(blendshapeName);
 
             if (blendshapeIndex != -1)
             {
                 //Note: Due to the difference in eyeWide_Left, we set it to follow the eyeWide_Right value.
                 if (blendshapeName.Contains("eyeWide_Left"))
                 {
-                    int blendshapeIndexTemp = m_SkinnedMesh.sharedMesh.GetBlendShapeIndex("eyeWide_Right");
+                    int blendshapeIndexTemp = GetBlendshapeIndex("eyeWide_Right");
                     frame.values.TryGetValue("eyeWide_Right", out float eyeWideRightValue);
                     value = eyeWideRightValue;
-                    m_SkinnedMesh.SetBlendShapeWeight(blendshapeIndexTemp, value * m_BlendShapeScale);
+                    if (blendshapeIndexTemp != -1)
+                        m_SkinnedMesh.SetBlendShapeWeight(blendshapeIndexTemp, value * m_BlendShapeScale);
                 }
                 
                 m_SkinnedMesh.SetBlendShapeWeight(blendshapeIndex, value * m_BlendShapeScale);
@@ -143,11 +184,6 @@ public class BlendshapeManager : MonoBehaviour
     
     private List<BlendshapeFrame> ConvertToBlendshapeFrames(List<float[]> blendshapes)
     {
-        string[] blendshapeNames = new string[]
-        {
-            "eyeBlinking_Left", "eyeBlinking_Right", "eyeLookDown_L", "eyeLookDown_R", "eyeLookIn_L", "eyeLookIn_R", "eyeLookOut_L", "eyeLookOut_R", "eyeLookUp_L", "eyeLookUp_R", "eyeSquint_L", "eyeSquint_R", "eyeWide_Left", "eyeWide_Right", "jawForward", "jawLeft", "jawRight", "jawOpen", "mouthClosed", "mouthFunnel", "mouthPucker", "mouthLeft", "mouthRight", "mouthSmile_L", "mouthSmile_R", "mouthFrown_L", "mouthFrown_R", "mouthDimple_L", "mouthDimple_R", "mouthStretch_L", "mouthStretch_R", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthPress_L", "mouthPress_R", "mouthLowerDown_L", "mouthLowerDown_R", "mouthUpperUp_L", "mouthUpperUp_R", "browDown_Left", "browDown_Right", "browInnerUp", "browOuterUp_L", "browOuterUp_R", "cheekPuff", "cheekSquint_L", "cheekSquint_R", "noseSneer_L", "noseSneer_R", "tongue_jawOpen", "tongue_jawForward", "tongue_jawLeft", "tongue_jawRight", "tongue_tongueOut",
-        };
-
         List<BlendshapeFrame> frames = new List<BlendshapeFrame>();
 
         foreach (var blendshapeArray in blendshapes)
