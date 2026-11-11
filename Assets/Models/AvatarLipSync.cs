@@ -23,7 +23,6 @@ public sealed class AvatarLipSync : MonoBehaviour
     [SerializeField] float m_JawSmoothing = 18f;
 
     static readonly string[] s_Jaw = { "jawOpen", "jawLeft", "jawRight", "jawForward" };
-    readonly int[] m_HeadJaw = new int[s_Jaw.Length];
     readonly int[] m_TeethJaw = new int[s_Jaw.Length];
     readonly float[] m_Samples = new float[512];
     bool m_Amplitude, m_NeuroSyncFailed;
@@ -31,12 +30,8 @@ public sealed class AvatarLipSync : MonoBehaviour
 
     void Awake()
     {
-        var head = m_Blendshapes != null ? m_Blendshapes.SkinnedMesh : null;
         for (var i = 0; i < s_Jaw.Length; i++)
-        {
-            m_HeadJaw[i] = head != null ? head.sharedMesh.GetBlendShapeIndex(s_Jaw[i]) : -1;
-            m_TeethJaw[i] = m_Teeth != null ? m_Teeth.sharedMesh.GetBlendShapeIndex("teeth_" + s_Jaw[i]) : -1;
-        }
+            m_TeethJaw[i] = m_Teeth != null ? BlendshapeNames.FindIndex(m_Teeth.sharedMesh, "teeth_" + s_Jaw[i]) : -1;
     }
 
     void OnEnable()
@@ -103,13 +98,13 @@ public sealed class AvatarLipSync : MonoBehaviour
                 target = Mathf.Min(m_MaxJawOpen, Mathf.Sqrt(sum / m_Samples.Length) * m_JawGain);
             }
             m_Jaw = Mathf.Lerp(m_Jaw, target, 1f - Mathf.Exp(-m_JawSmoothing * Time.deltaTime));
-            if (m_HeadJaw[0] >= 0) head.SetBlendShapeWeight(m_HeadJaw[0], m_Jaw);
+            m_Blendshapes.SetWeight("jawOpen", m_Jaw);
             if (source == null || (!source.isPlaying && m_Jaw < 0.1f)) m_Amplitude = false;
         }
 
         if (m_Teeth == null) return;
         for (var i = 0; i < s_Jaw.Length; i++)
-            if (m_HeadJaw[i] >= 0 && m_TeethJaw[i] >= 0)
-                m_Teeth.SetBlendShapeWeight(m_TeethJaw[i], head.GetBlendShapeWeight(m_HeadJaw[i]));
+            if (m_TeethJaw[i] >= 0)
+                m_Teeth.SetBlendShapeWeight(m_TeethJaw[i], m_Blendshapes.GetWeight(s_Jaw[i]));
     }
 }

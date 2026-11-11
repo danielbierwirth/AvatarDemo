@@ -25,9 +25,14 @@ namespace VoiceAgent.Scenes
         Gemma3Model m_Gemma;
         Persona m_Persona;
 
-        async void Start()
+        void Awake()
         {
             m_Persona = Persona.Load();
+            AppLanguage.Changed += OnLanguageChanged;
+        }
+
+        async void Start()
+        {
             m_View.SetMicState(MicState.Off);
             m_View.SetInteractable(false);
             m_View.SetStatus("Loading models…");
@@ -99,12 +104,11 @@ namespace VoiceAgent.Scenes
             if (m_VoiceSelector == null || !m_Speech.IsLoaded) return;
             m_VoiceSelector.Show(SpeechOutput.AvailableVoices(ModelRoots.Tts), m_Persona.Voice(AppLanguage.Current));
             m_VoiceSelector.Selected += OnVoiceSelected;
-            // Until a style is picked, the highlight shows the persona's voice for the selected language.
-            AppLanguage.Changed += OnLanguageChanged;
         }
 
         void OnLanguageChanged(Lang lang)
         {
+            // Until a style is picked, the highlight shows the persona's voice for the selected language.
             if (m_VoiceSelector != null && string.IsNullOrEmpty(m_Speech.VoiceOverride)) m_VoiceSelector.Highlight(m_Persona.Voice(lang));
         }
 
