@@ -8,9 +8,24 @@ using System.IO;
 
 public class BlendshapeManager : MonoBehaviour
 {
+    /// <summary>Which blendshape each of NeuroSync's 52 face values drives.</summary>
+    public enum ChannelMapping
+    {
+        /// <summary>The original demo's mapping, tuned for SampleHead.</summary>
+        SampleHead,
+        /// <summary>Apple's ARKit order as recorded by Live Link Face, for avatars with standard ARKit blendshapes.</summary>
+        LiveLinkArkit,
+    }
+
     [SerializeField] private string audioToBlendshapeUrl = "http://localhost:5005/audio_to_blendshapes";
     [SerializeField] private SkinnedMeshRenderer m_SkinnedMesh;
+    [Tooltip("Other face meshes that share ARKit blendshapes with the head, such as eyes, eyelashes, teeth and tongue. " +
+             "If empty, every SkinnedMeshRenderer with blendshapes under the head's root object is driven too.")]
+    [SerializeField] private SkinnedMeshRenderer[] m_ExtraFaceMeshes;
     [SerializeField] private float m_BlendShapeScale = 110f;
+    [Tooltip("Which blendshape each NeuroSync value drives. SampleHead: the original demo's mapping. " +
+             "Live Link ARKit: the standard ARKit order, for avatars with ARKit blendshapes such as Avaturn or CC4.")]
+    [SerializeField] private ChannelMapping m_ChannelMapping = ChannelMapping.SampleHead;
 
     private const int TARGET_FRAMERATE = 60;
     private const int ARKIT_BLENDSHAPE_COUNT = 52;
@@ -20,15 +35,33 @@ public class BlendshapeManager : MonoBehaviour
     private AudioSource audioSource;
     private float playbackTime = 0f;
 
-    // NeuroSync output order. Names use this project's style; BlendshapeNames also matches the ARKit standard names.
-    private static readonly string[] blendshapeNames = new string[]
+    // The original demo's mapping from NeuroSync output index to SampleHead's blendshape names.
+    private static readonly string[] sampleHeadNames = new string[]
     {
         "eyeBlinking_Left", "eyeBlinking_Right", "eyeLookDown_L", "eyeLookDown_R", "eyeLookIn_L", "eyeLookIn_R", "eyeLookOut_L", "eyeLookOut_R", "eyeLookUp_L", "eyeLookUp_R", "eyeSquint_L", "eyeSquint_R", "eyeWide_Left", "eyeWide_Right", "jawForward", "jawLeft", "jawRight", "jawOpen", "mouthClosed", "mouthFunnel", "mouthPucker", "mouthLeft", "mouthRight", "mouthSmile_L", "mouthSmile_R", "mouthFrown_L", "mouthFrown_R", "mouthDimple_L", "mouthDimple_R", "mouthStretch_L", "mouthStretch_R", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthPress_L", "mouthPress_R", "mouthLowerDown_L", "mouthLowerDown_R", "mouthUpperUp_L", "mouthUpperUp_R", "browDown_Left", "browDown_Right", "browInnerUp", "browOuterUp_L", "browOuterUp_R", "cheekPuff", "cheekSquint_L", "cheekSquint_R", "noseSneer_L", "noseSneer_R", "tongue_jawOpen", "tongue_jawForward", "tongue_jawLeft", "tongue_jawRight", "tongue_tongueOut",
     };
 
-    // Blendshape name → index on the current head mesh, rebuilt when the mesh changes.
-    private readonly Dictionary<string, int> indexCache = new Dictionary<string, int>();
-    private Mesh indexCacheMesh;
+    // Live Link Face / ARKit order: left eye, right eye, jaw, mouth, brows, cheeks, nose, tongue.
+    private static readonly string[] liveLinkArkitNames = new string[]
+    {
+        "eyeBlinkLeft", "eyeLookDownLeft", "eyeLookInLeft", "eyeLookOutLeft", "eyeLookUpLeft", "eyeSquintLeft", "eyeWideLeft",
+        "eyeBlinkRight", "eyeLookDownRight", "eyeLookInRight", "eyeLookOutRight", "eyeLookUpRight", "eyeSquintRight", "eyeWideRight",
+        "jawForward", "jawRight", "jawLeft", "jawOpen",
+        "mouthClose", "mouthFunnel", "mouthPucker", "mouthRight", "mouthLeft",
+        "mouthSmileLeft", "mouthSmileRight", "mouthFrownLeft", "mouthFrownRight", "mouthDimpleLeft", "mouthDimpleRight",
+        "mouthStretchLeft", "mouthStretchRight", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper",
+        "mouthPressLeft", "mouthPressRight", "mouthLowerDownLeft", "mouthLowerDownRight", "mouthUpperUpLeft", "mouthUpperUpRight",
+        "browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight",
+        "cheekPuff", "cheekSquintLeft", "cheekSquintRight", "noseSneerLeft", "noseSneerRight",
+        "tongueOut",
+    };
+
+    private string[] blendshapeNames => m_ChannelMapping == ChannelMapping.LiveLinkArkit ? liveLinkArkitNames : sampleHeadNames;
+
+    // Face meshes driven together (head first), each with a blendshape name → index cache. Rebuilt when the head changes.
+    private readonly List<SkinnedMeshRenderer> faceMeshes = new List<SkinnedMeshRenderer>();
+    private readonly List<Dictionary<string, int>> faceIndexCaches = new List<Dictionary<string, int>>();
+    private SkinnedMeshRenderer faceMeshesHead;
 
     void Awake()
     {
@@ -90,60 +123,82 @@ public class BlendshapeManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Index of a blendshape on the head mesh, accepting both this project's names ("mouthSmile_L") and ARKit standard
-    /// names ("mouthSmileLeft"). Returns -1 if the head doesn't have it.
+    /// Sets a blendshape on every face mesh that has it. Accepts both this project's names ("mouthSmile_L") and ARKit
+    /// standard names ("mouthSmileLeft"). <paramref name="weight"/> is in Unity's 0–100 range.
     /// </summary>
-    public int GetBlendshapeIndex(string blendshapeName)
+    public void SetWeight(string blendshapeName, float weight)
     {
-        var mesh = m_SkinnedMesh != null ? m_SkinnedMesh.sharedMesh : null;
-        if (mesh == null) return -1;
-
-        if (mesh != indexCacheMesh)
+        EnsureFaceMeshes();
+        for (int m = 0; m < faceMeshes.Count; m++)
         {
-            indexCache.Clear();
-            indexCacheMesh = mesh;
-            var missing = new List<string>();
-            for (int i = 0; i < ARKIT_BLENDSHAPE_COUNT; i++)
-            {
-                string name = blendshapeNames[i];
-                int index = BlendshapeNames.FindIndex(mesh, name);
-                indexCache[name] = index;
-                if (index == -1) missing.Add(name);
-            }
-            if (missing.Count > 0)
-                Debug.LogWarning($"[Blendshapes] '{mesh.name}' has no match for {missing.Count} of {ARKIT_BLENDSHAPE_COUNT} ARKit blendshapes: {string.Join(", ", missing)}", this);
+            int index = IndexOn(m, blendshapeName);
+            if (index != -1) faceMeshes[m].SetBlendShapeWeight(index, weight);
+        }
+    }
+
+    /// <summary>Current weight of a blendshape on the head mesh, or 0 if the head doesn't have it.</summary>
+    public float GetWeight(string blendshapeName)
+    {
+        EnsureFaceMeshes();
+        if (faceMeshes.Count == 0 || faceMeshes[0] != m_SkinnedMesh) return 0f;
+        int index = IndexOn(0, blendshapeName);
+        return index != -1 ? m_SkinnedMesh.GetBlendShapeWeight(index) : 0f;
+    }
+
+    private int IndexOn(int meshSlot, string blendshapeName)
+    {
+        var cache = faceIndexCaches[meshSlot];
+        if (!cache.TryGetValue(blendshapeName, out int index))
+            cache[blendshapeName] = index = BlendshapeNames.FindIndex(faceMeshes[meshSlot].sharedMesh, blendshapeName);
+        return index;
+    }
+
+    private void EnsureFaceMeshes()
+    {
+        if (faceMeshesHead == m_SkinnedMesh && faceMeshes.Count > 0) return;
+        faceMeshesHead = m_SkinnedMesh;
+        faceMeshes.Clear();
+        faceIndexCaches.Clear();
+        if (m_SkinnedMesh == null) return;
+
+        void Add(SkinnedMeshRenderer r)
+        {
+            if (r == null || r.sharedMesh == null || r.sharedMesh.blendShapeCount == 0 || faceMeshes.Contains(r)) return;
+            faceMeshes.Add(r);
+            faceIndexCaches.Add(new Dictionary<string, int>());
         }
 
-        if (!indexCache.TryGetValue(blendshapeName, out int cached))
-            indexCache[blendshapeName] = cached = BlendshapeNames.FindIndex(mesh, blendshapeName);
-        return cached;
+        Add(m_SkinnedMesh);
+        if (m_ExtraFaceMeshes != null && m_ExtraFaceMeshes.Length > 0)
+            foreach (var r in m_ExtraFaceMeshes) Add(r);
+        else
+            foreach (var r in m_SkinnedMesh.transform.root.GetComponentsInChildren<SkinnedMeshRenderer>(true)) Add(r);
+
+        var missing = new List<string>();
+        for (int i = 0; i < ARKIT_BLENDSHAPE_COUNT; i++)
+        {
+            bool found = false;
+            for (int m = 0; m < faceMeshes.Count && !found; m++) found = IndexOn(m, blendshapeNames[i]) != -1;
+            if (!found) missing.Add(blendshapeNames[i]);
+        }
+
+        var meshNames = faceMeshes.ConvertAll(r => r.name);
+        Debug.Log($"[Blendshapes] Driving {faceMeshes.Count} face mesh(es): {string.Join(", ", meshNames)}", this);
+        if (missing.Count > 0)
+            Debug.LogWarning($"[Blendshapes] No face mesh has {missing.Count} of {ARKIT_BLENDSHAPE_COUNT} ARKit blendshapes: {string.Join(", ", missing)}", this);
     }
 
     private void ApplyBlendshapes(BlendshapeFrame frame)
     {
-        if (m_SkinnedMesh == null) return;
-
         foreach (var kvp in frame.values)
         {
-            string blendshapeName = kvp.Key;
             float value = kvp.Value;
 
-            int blendshapeIndex = GetBlendshapeIndex(blendshapeName);
+            //Note: Due to the difference in eyeWide_Left, we set it to follow the eyeWide_Right value.
+            if (kvp.Key == "eyeWide_Left")
+                frame.values.TryGetValue("eyeWide_Right", out value);
 
-            if (blendshapeIndex != -1)
-            {
-                //Note: Due to the difference in eyeWide_Left, we set it to follow the eyeWide_Right value.
-                if (blendshapeName.Contains("eyeWide_Left"))
-                {
-                    int blendshapeIndexTemp = GetBlendshapeIndex("eyeWide_Right");
-                    frame.values.TryGetValue("eyeWide_Right", out float eyeWideRightValue);
-                    value = eyeWideRightValue;
-                    if (blendshapeIndexTemp != -1)
-                        m_SkinnedMesh.SetBlendShapeWeight(blendshapeIndexTemp, value * m_BlendShapeScale);
-                }
-                
-                m_SkinnedMesh.SetBlendShapeWeight(blendshapeIndex, value * m_BlendShapeScale);
-            }
+            SetWeight(kvp.Key, value * m_BlendShapeScale);
         }
     }
 
@@ -168,11 +223,12 @@ public class BlendshapeManager : MonoBehaviour
         isPlaying = false;
         playbackTime = 0f;
         
-        if (m_SkinnedMesh != null)
+        EnsureFaceMeshes();
+        foreach (var faceMesh in faceMeshes)
         {
-            for (int i = 0; i < m_SkinnedMesh.sharedMesh.blendShapeCount; i++)
+            for (int i = 0; i < faceMesh.sharedMesh.blendShapeCount; i++)
             {
-                m_SkinnedMesh.SetBlendShapeWeight(i, 0);
+                faceMesh.SetBlendShapeWeight(i, 0);
             }
         }
 

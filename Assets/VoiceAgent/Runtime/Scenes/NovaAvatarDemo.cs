@@ -17,6 +17,8 @@ namespace VoiceAgent.Scenes
         [SerializeField] SpeechOutput m_Speech;
         [Tooltip("Voice style picker (optional). Picking a style overrides the persona's per-language voices for the session.")]
         [SerializeField] VoiceSelector m_VoiceSelector;
+        [Tooltip("Swaps the avatar to match the voice style: female (F*) and male (M*) voices each get their own model.")]
+        [SerializeField] AvatarSwitcher m_Avatars;
         [Tooltip("Upper bound on generated tokens per reply (Korean and Arabic use more tokens per sentence than English).")]
         [SerializeField] int m_MaxReplyTokens = 64;
 
@@ -25,9 +27,16 @@ namespace VoiceAgent.Scenes
         Gemma3Model m_Gemma;
         Persona m_Persona;
 
-        async void Start()
+        void Awake()
         {
             m_Persona = Persona.Load();
+            // In Awake, so only the chosen avatar's lip sync runs its Start (which loads the NeuroSync models).
+            ShowAvatarFor(m_Persona.Voice(AppLanguage.Current));
+            AppLanguage.Changed += OnLanguageChanged;
+        }
+
+        async void Start()
+        {
             m_View.SetMicState(MicState.Off);
             m_View.SetInteractable(false);
             m_View.SetStatus("Loading models…");
@@ -99,18 +108,27 @@ namespace VoiceAgent.Scenes
             if (m_VoiceSelector == null || !m_Speech.IsLoaded) return;
             m_VoiceSelector.Show(SpeechOutput.AvailableVoices(ModelRoots.Tts), m_Persona.Voice(AppLanguage.Current));
             m_VoiceSelector.Selected += OnVoiceSelected;
-            // Until a style is picked, the highlight shows the persona's voice for the selected language.
-            AppLanguage.Changed += OnLanguageChanged;
         }
 
         void OnLanguageChanged(Lang lang)
         {
-            if (m_VoiceSelector != null && string.IsNullOrEmpty(m_Speech.VoiceOverride)) m_VoiceSelector.Highlight(m_Persona.Voice(lang));
+            // Until a style is picked, the persona's voice for the selected language sets the highlight and the avatar.
+            if (!string.IsNullOrEmpty(m_Speech.VoiceOverride)) return;
+            var voice = m_Persona.Voice(lang);
+            if (m_VoiceSelector != null) m_VoiceSelector.Highlight(voice);
+            ShowAvatarFor(voice);
+        }
+
+        void ShowAvatarFor(string voice)
+        {
+            if (m_Avatars != null) m_Avatars.Show(voice);
         }
 
         void OnVoiceSelected(string voice)
         {
             m_Speech.VoiceOverride = voice;
+            // Before the preview below starts, so the new avatar lip-syncs it.
+            ShowAvatarFor(voice);
             Debug.Log($"[Nova] voice style {voice}");
             // A short sample in the selected language, unless a turn or the mic is in progress.
             if (m_Controller == null || m_Controller.IsBusy || m_Voice.IsListening) return;
