@@ -1,5 +1,6 @@
 using System;
 using SentisModels;
+using VoiceAgent.Info;
 using VoiceAgent.UI;
 using UnityEngine;
 
@@ -7,9 +8,11 @@ namespace VoiceAgent.Scenes
 {
     /// <summary>
     /// The "Ask Nova anything" voice dialog on the NovaAvatarScene avatar, ported from mini-agent-unity's
-    /// VoiceAgentDemoScene without function calling: mic → Silero VAD → SenseVoice (English, Korean) or Whisper (Arabic)
-    /// → Gemma3 reply in the user's language → Supertonic 3 speech, which the avatar lip-syncs to (AvatarLipSync).
-    /// The EN / KR / AR toggle picks the speech-to-text language; typed text works too. Everything runs on-device.
+    /// VoiceAgentDemoScene without function calling: mic → Silero VAD → SenseVoice (English, Korean) or Whisper (Arabic,
+    /// the dialect fine-tune by default) → reply in the user's language from the language model (qwen via Ollama on this
+    /// computer; questions about the world are looked up on the web first), or Gemma3 on-device when it can't be reached → Supertonic 3 speech, which the avatar lip-syncs to
+    /// (AvatarLipSync). The EN / KR / AR toggle picks the speech-to-text language; switching it starts a fresh chat with
+    /// the greeting in the new language. Typed text works too.
     /// </summary>
     public sealed class NovaAvatarDemo : MonoBehaviour
     {
@@ -19,6 +22,16 @@ namespace VoiceAgent.Scenes
         [SerializeField] VoiceSelector m_VoiceSelector;
         [Tooltip("Upper bound on generated tokens per reply (Korean and Arabic use more tokens per sentence than English).")]
         [SerializeField] int m_MaxReplyTokens = 64;
+        [Tooltip("The speech-to-text model for Arabic (VoiceAgent ▸ Speech installs each). The dialect model is whisper-small fine-tuned on 13 Arabic dialects.")]
+        [SerializeField] ArabicWhisper m_ArabicSpeech = ArabicWhisper.SmallDialect;
+
+        [Header("Language model (OpenAI-compatible chat completions; empty endpoint = on-device Gemma3 only)")]
+        [SerializeField] string m_LlmEndpoint = LlmClient.DefaultEndpoint;
+        [SerializeField] string m_LlmModel = LlmClient.DefaultModel;
+        [Tooltip("reasoning_effort: \"none\" for hybrid thinking models (qwen3.5), \"low\" for gpt-oss, empty for models without thinking.")]
+        [SerializeField] string m_LlmReasoningEffort = LlmClient.DefaultReasoningEffort;
+        [Tooltip("Answer questions about the world from the internet: web search, weather, the time in a city, the user's location.")]
+        [SerializeField] bool m_WebAnswers = true;
 
         ConversationController m_Controller;
         VoiceInput m_Voice;
@@ -72,9 +85,16 @@ namespace VoiceAgent.Scenes
             m_View.SetStatus("Warming up Gemma3…");
             await m_Gemma.GenerateAsync("hi", 2);
             if (!this) return;
+            ModelRoots.WhisperSize = ModelRoots.WhisperFolderOf(m_ArabicSpeech);
             m_Voice = new VoiceInput();
+            var llm = string.IsNullOrEmpty(m_LlmEndpoint) ? null : new LlmClient(m_LlmEndpoint, m_LlmModel, m_LlmReasoningEffort);
+            // Loads the model into Ollama now, so the first answer doesn't wait for it.
+            if (llm != null) _ = llm.WarmupAsync();
+            // mini-agent's web answers; qwen writes the answer from what the search found.
+            var info = m_WebAnswers ? new InfoAgent(new UnityWebClient(), m_Gemma) { Writer = llm != null ? new AnswerWriter(llm) : null } : null;
+            if (info != null) _ = info.WarmupAsync();
 
-            m_Controller = new ConversationController(m_Persona, m_Gemma, m_View, m_Speech, m_MaxReplyTokens);
+            m_Controller = new ConversationController(m_Persona, m_Gemma, m_View, m_Speech, m_MaxReplyTokens, llm, info);
             m_View.MicClicked += ToggleListen;
             m_Voice.SpeechStarted += () => m_View.SetInputText("…");
             m_Voice.Partial += text => m_View.SetInputText(text);
@@ -108,6 +128,14 @@ namespace VoiceAgent.Scenes
 
         void OnLanguageChanged(Lang lang)
         {
+            // A new language starts a new chat: the reply in progress stops (and isn't shown or spoken), and the greeting
+            // is shown in the new language. (AssistantView clears the input field.)
+            if (m_Controller != null)
+            {
+                m_Controller.Reset();
+                m_View.ClearMessages();
+                m_View.AddMessage(m_Persona.Greeting(lang), false);
+            }
             // Until a style is picked, the highlight shows the persona's voice for the selected language.
             if (m_VoiceSelector != null && string.IsNullOrEmpty(m_Speech.VoiceOverride)) m_VoiceSelector.Highlight(m_Persona.Voice(lang));
         }
@@ -194,7 +222,7 @@ namespace VoiceAgent.Scenes
             if (!m_Voice.Listen())
             {
                 m_View.SetStatus(AppLanguage.Current == Lang.Ar
-                    ? "Can't listen: no microphone, or Whisper isn't installed (VoiceAgent ▸ Speech ▸ Download Whisper Base)."
+                    ? "Can't listen: no microphone, or Whisper isn't installed (VoiceAgent ▸ Speech menu)."
                     : "Can't listen: no microphone, or the speech model didn't load.");
                 return;
             }

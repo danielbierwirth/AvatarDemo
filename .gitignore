@@ -113,7 +113,7 @@ ehthumbs.db
 Thumbs.db
 
 # VoiceAgent (Ask Nova voice dialog)
-# Whisper for Arabic speech-to-text (~194 MB): VoiceAgent > Speech > Download Whisper Base writes it
+# Whisper for Arabic speech-to-text (small-dialect by default, ~543 MB): VoiceAgent > Speech writes it
 /[Aa]ssets/StreamingAssets/Whisper/
 /[Aa]ssets/StreamingAssets/Whisper.meta
 # Model copies staged into StreamingAssets during a player build (ModelBuildStaging)

@@ -31,12 +31,31 @@ namespace VoiceAgent
         public static string Tts => Package(TtsPackage);
         public static string Gemma => Package(GemmaPackage);
         /// <summary>
-        /// The Whisper size used for Arabic speech: "tiny", "base" or "small". base recovered more Arabic commands than
-        /// tiny at ~1.6x its time, and as many as small at a third of small's time (Docs/stt-roundtrip.md).
+        /// The Whisper model used for Arabic speech, by folder: "small-dialect" (the default: whisper-small fine-tuned on
+        /// 13 Arabic dialects), "small", "base" or "tiny". With the command-word prompt (SpeechLanguage.ArabicPrompt) the
+        /// dialect model transcribed closest to what was said, at stock small's speed (mini-agent-unity's
+        /// Docs/stt-roundtrip.md). The scene sets it from its Inspector option (<see cref="ArabicWhisper"/>) before creating
+        /// <see cref="VoiceInput"/>; when it isn't installed, VoiceInput falls back to the largest one that is
+        /// (<see cref="InstalledWhisper"/>).
         /// </summary>
-        public static string WhisperSize = "base";
+        public static string WhisperSize = "small-dialect";
         /// <summary>The selected Whisper's folder (VoiceAgent ▸ Speech ▸ Download Whisper … writes it; not in git).</summary>
         public static string Whisper => WhisperFor(WhisperSize);
+        /// <summary>The selected Whisper if it is installed, else the largest installed one (small, base, tiny), else null.</summary>
+        public static string InstalledWhisper()
+        {
+            foreach (var size in new[] { WhisperSize, "small-dialect", "small", "base", "tiny" })
+                if (WhisperRecognizer.Exists(WhisperFor(size))) return size;
+            return null;
+        }
+
+        public static string WhisperFolderOf(ArabicWhisper model) => model switch
+        {
+            ArabicWhisper.Tiny => "tiny",
+            ArabicWhisper.Base => "base",
+            ArabicWhisper.SmallDialect => "small-dialect",
+            _ => "small",
+        };
         public static string WhisperFor(string size) => Path.Combine(Application.isEditor ? Application.streamingAssetsPath : RuntimeRoot, WhisperFolder, size);
 
         /// <summary>True where StreamingAssets is a URL inside the app package (Android) instead of a folder.</summary>
@@ -101,5 +120,14 @@ namespace VoiceAgent
                 throw new FileNotFoundException($"{relative} is missing from StreamingAssets: {request.error}");
             return request.downloadHandler.text;
         }
+    }
+
+    /// <summary>The Whisper model Arabic speech goes to (VoiceAgent ▸ Speech ▸ Download Whisper … installs each).</summary>
+    public enum ArabicWhisper
+    {
+        [InspectorName("Whisper tiny (fastest)")] Tiny,
+        [InspectorName("Whisper base")] Base,
+        [InspectorName("Whisper small")] Small,
+        [InspectorName("Whisper small, Arabic dialects")] SmallDialect,
     }
 }
